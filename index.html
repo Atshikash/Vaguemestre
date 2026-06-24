@@ -32,6 +32,9 @@ header p{margin:1px 0 0;font-size:11px;color:#b9c6da;letter-spacing:.3px}
 .eyebrow{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-weight:600}
 .scanbtn{width:100%;border:none;border-radius:12px;background:var(--navy);color:#fff;font-family:Oswald;font-size:16px;letter-spacing:.8px;text-transform:uppercase;font-weight:600;padding:16px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer}
 .scanbtn:active{transform:translateY(1px)}.scanbtn svg{width:22px;height:22px}
+.photobtn{width:100%;margin-top:8px;border:1px solid var(--navy);border-radius:12px;background:#fff;color:var(--navy);font-family:Oswald;font-size:15px;letter-spacing:.6px;text-transform:uppercase;font-weight:600;padding:13px;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer}
+.photobtn:active{background:#f1f4f9}.photobtn svg{width:20px;height:20px}
+.photobtn:disabled{opacity:.6}
 #reader{display:none;margin-top:12px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
 .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45}
 .seg{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
@@ -167,8 +170,15 @@ header p{margin:1px 0 0;font-size:11px;color:#b9c6da;letter-spacing:.3px}
         <button class="scanbtn" id="scanBtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M3 12h18"/></svg>
           <span class="scanLbl">Scanner le code-barres</span></button>
+        <button class="photobtn" id="photoBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Photo du reçu
+        </button>
+        <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
         <div id="reader"></div>
-        <p class="hint" id="scanHint">Vise le code-barres de la preuve de dépôt : le n° se remplit seul. La caméra demande une page https (héberge sur GitHub Pages). Sinon, saisis le n° à la main.</p>
+        <div id="fileReader" style="display:none"></div>
+        <p class="hint" id="photoStatus" style="display:none"></p>
+        <p class="hint" id="scanHint">Vise le code-barres de la preuve de dépôt : le n° se remplit seul. Si le scan en direct accroche, utilise <b>Photo du reçu</b> : une photo nette se lit mieux. La caméra demande une page https (GitHub Pages).</p>
       </div>
       <div class="field" id="numField"><label>N° de suivi</label>
         <input id="num" inputmode="text" placeholder="ex. 1A210 721 7286 0" autocomplete="off"></div>
@@ -392,6 +402,54 @@ document.getElementById("scanBtn").addEventListener("click",async()=>{
     scanning=true;document.querySelector(".scanLbl").textContent="Arrêter le scan";
   }catch(err){document.getElementById("reader").style.display="none";document.getElementById("scanHint").textContent="Caméra inaccessible ici. Héberge la page en https (GitHub Pages) ou saisis le n° à la main.";toast("Caméra indisponible")}});
 async function stopScan(){try{if(qr){await qr.stop();await qr.clear()}}catch(e){}scanning=false;document.getElementById("reader").style.display="none";document.querySelector(".scanLbl").textContent="Scanner le code-barres"}
+
+/* --- Photo du reçu : code-barres sur image + OCR --- */
+function setStatus(msg){const s=document.getElementById("photoStatus");if(msg){s.style.display="block";s.innerHTML=msg}else s.style.display="none"}
+let tessLoaded=false;
+function loadTesseract(){return new Promise((res,rej)=>{if(tessLoaded||window.Tesseract){tessLoaded=true;return res()}
+  const s=document.createElement("script");s.src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js";
+  s.onload=()=>{tessLoaded=true;res()};s.onerror=()=>rej();document.head.appendChild(s)})}
+function cleanNum(t){return t.replace(/\s+/g," ").trim()}
+function findTracking(text){
+  const t=text.replace(/[Oo]/g,"0").toUpperCase();
+  let m=t.match(/\b([0-9][A-Z]\s?\d{3}\s?\d{3}\s?\d{4}\s?\d)\b/);            // 1A 210 721 7286 0
+  if(m)return cleanNum(m[1]);
+  m=t.match(/\b([0-9]N\s?\d{4}\s?\d{4}\s?\d{3,4})\b/);                        // 8N0463 8339 015
+  if(m)return cleanNum(m[1]);
+  m=t.match(/\b([A-Z]{2}\s?\d{3}\s?\d{3}\s?\d{3}\s?[A-Z]{2})\b/);            // CW 483 057 568 FR
+  if(m)return cleanNum(m[1]);
+  return ""}
+function findAmount(text){
+  const m=text.match(/(\d{1,3}[.,]\d{2})\s*(?:€|EUR)/i)||text.match(/(?:€|EUR)\s*(\d{1,3}[.,]\d{2})/i);
+  return m?m[1].replace(".",","):""}
+
+document.getElementById("photoBtn").addEventListener("click",()=>document.getElementById("photoInput").click());
+document.getElementById("photoInput").addEventListener("change",async ev=>{
+  const file=ev.target.files[0];ev.target.value="";if(!file)return;
+  const btn=document.getElementById("photoBtn");btn.disabled=true;
+  setStatus("🔎 Lecture du code-barres sur la photo…");
+  let gotNum=false;
+  try{const h=new Html5Qrcode("fileReader",{formatsToSupport:[Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,Html5QrcodeSupportedFormats.QR_CODE,Html5QrcodeSupportedFormats.DATA_MATRIX,Html5QrcodeSupportedFormats.EAN_13]});
+    const r=await h.scanFile(file,false);await h.clear();
+    document.getElementById("num").value=cleanNum(r);gotNum=true;if(navigator.vibrate)navigator.vibrate(60);
+  }catch(e){/* pas de code-barres lisible */}
+  // OCR pour le tarif (+ n° en secours)
+  setStatus("📄 Lecture du texte du reçu… (quelques secondes)");
+  try{
+    await loadTesseract();
+    const {data:{text}}=await Tesseract.recognize(file,"eng");
+    const amt=findAmount(text);
+    if(amt){document.getElementById("amount").value=amt;lastDefault=""}
+    if(!gotNum){const n=findTracking(text);if(n){document.getElementById("num").value=n;gotNum=true}}
+    const parts=[];parts.push(gotNum?"N° rempli ✓":"n° non détecté (à saisir)");parts.push(amt?("tarif "+amt+" € ✓"):"tarif non détecté");
+    setStatus("Photo analysée — "+parts.join(" · ")+". Vérifie puis enregistre.");
+    toast(gotNum?"Infos lues sur la photo ✓":"Tarif lu — complète le n°");
+  }catch(e){
+    if(gotNum){setStatus("N° lu sur le code-barres ✓. (Lecture du texte indisponible — complète le tarif à la main.)");toast("N° capturé ✓")}
+    else{setStatus("Lecture impossible sur cette photo. Réessaie avec une photo plus nette et bien cadrée sur l'étiquette, ou saisis à la main.");toast("Photo illisible")}
+  }
+  btn.disabled=false;
+});
 
 /* CSV */
 document.getElementById("exportBtn").addEventListener("click",()=>{
