@@ -109,6 +109,39 @@ header p{margin:1px 0 0;font-size:11px;color:#b9c6da;letter-spacing:.3px}
 .chev{color:var(--muted);font-size:18px;transition:.2s}
 .chev.open{transform:rotate(180deg)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ---- Fiche impression ---- */
+.logo-slots{display:flex;gap:8px;margin-bottom:6px}
+.logo-slot{flex:1;height:64px;border:1px dashed var(--line);border-radius:9px;display:flex;align-items:center;justify-content:center;position:relative;background:#fbfcfe;overflow:hidden;cursor:pointer}
+.logo-slot img{max-width:100%;max-height:100%;object-fit:contain}
+.logo-slot span{font-size:11px;color:var(--muted)}
+.logo-slot .x{position:absolute;top:2px;right:2px;background:#fff;border:1px solid var(--line);border-radius:50%;width:20px;height:20px;line-height:18px;text-align:center;color:#c0392b;font-size:12px}
+#printArea{display:none}
+@media print{
+  header,.wrap,.toast{display:none!important}
+  #printArea{display:block!important}
+  @page{size:A4 portrait;margin:12mm}
+}
+.fiche{font-family:Inter,Arial,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.fiche-head{display:flex;justify-content:space-between;align-items:center;border-bottom:2.5px solid #16263f;padding-bottom:8px;margin-bottom:12px;gap:12px}
+.fiche-logos{display:flex;gap:8px;align-items:center}
+.fiche-logos .lg{height:20mm;width:20mm;object-fit:contain}
+.fiche-logos .lgph{height:20mm;width:20mm;border:1px dashed #aaa;display:flex;align-items:center;justify-content:center;font-size:7pt;color:#aaa;text-align:center}
+.fiche-title{text-align:right}
+.ft-main{font-family:Oswald,Arial;font-weight:700;font-size:16pt;color:#16263f;letter-spacing:.5px}
+.ft-sub{font-size:9pt;color:#333}.ft-date{font-size:11pt;font-weight:700;margin-top:3px;color:#16263f}
+.fiche-tbl{width:100%;border-collapse:collapse;font-size:8.5pt;margin-top:4px}
+.fiche-tbl th{background:#16263f;color:#fff;padding:5px 6px;text-align:left;font-size:8pt;font-weight:600}
+.fiche-tbl td{border:1px solid #bbb;padding:4px 6px;vertical-align:top}
+.fiche-tbl tr:nth-child(even) td{background:#f3f5f8}
+.fiche-tbl .num{font-family:monospace;font-size:8pt;white-space:nowrap}
+.fiche-tot{margin-top:10px;font-size:10pt;border-top:1.5px solid #16263f;padding-top:6px}
+.fiche-tot b{color:#16263f}
+.fiche-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16mm}
+.fiche-sig{font-size:9pt;text-align:center}
+.fiche-sig .line{margin-top:14mm;border-top:1px solid #000;width:55mm}
+.fiche-stamp{text-align:center}
+.stamp-box{width:30mm;height:30mm;border:1.3px solid #000;margin:0 auto}
+.stamp-lbl{font-size:7.5pt;margin-top:3px;color:#333}
 </style>
 </head>
 <body>
@@ -235,6 +268,18 @@ header p{margin:1px 0 0;font-size:11px;color:#b9c6da;letter-spacing:.3px}
     </div>
   </section>
 
+  <section class="card">
+    <div class="card-h"><h2>Fiche journalière (impression)</h2></div>
+    <div class="card-b">
+      <p class="hint" style="margin-top:0">Génère une fiche A4 des envois de la période choisie (Jour par défaut), avec en-tête logos, zone signature et un cadre <b>3 cm × 3 cm</b> pour le cachet d'oblitération de La Poste.</p>
+      <div class="field"><label>Logos de l'en-tête (tape pour charger)</label>
+        <div class="logo-slots" id="logoSlots"></div>
+        <input id="logoInput" type="file" accept="image/*" hidden>
+      </div>
+      <button class="save" id="printBtn" style="background:var(--navy);color:#fff">Imprimer la fiche</button>
+    </div>
+  </section>
+
   <div class="foot">
     <button id="exportBtn">Exporter CSV</button>
     <button id="importBtn">Importer CSV</button>
@@ -243,6 +288,7 @@ header p{margin:1px 0 0;font-size:11px;color:#b9c6da;letter-spacing:.3px}
   <p class="tot" id="grandTot"></p>
 </div>
 
+<div id="printArea"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -476,7 +522,66 @@ document.getElementById("importFile").addEventListener("change",ev=>{const f=ev.
       if(exp)remember(senders,exp);if(dest)remember(recips,dest);n++});
     saveAll();renderPickers();render();toast(n+" ligne(s) importée(s)")}catch(e){toast("CSV illisible")}};r.readAsText(f)});
 
-renderPickers();applyType();refreshAmtLabel();render();
+/* ---- Logos & fiche journalière ---- */
+const LKEY="vmg_logos_v1";
+let logos=loadJSON(LKEY,[null,null,null]);if(!Array.isArray(logos)||logos.length<3)logos=[null,null,null];
+let logoTarget=0;
+
+function renderLogos(){
+  const c=document.getElementById("logoSlots");
+  c.innerHTML=logos.map((l,i)=>l?`<div class="logo-slot" data-i="${i}"><img src="${l}"><span class="x" data-x="${i}">✕</span></div>`:`<div class="logo-slot" data-i="${i}"><span>Logo ${i+1}</span></div>`).join("");
+}
+document.getElementById("logoSlots").addEventListener("click",e=>{
+  const x=e.target.closest(".x");
+  if(x){logos[+x.dataset.x]=null;localStorage.setItem(LKEY,JSON.stringify(logos));renderLogos();return}
+  const s=e.target.closest(".logo-slot");if(!s)return;logoTarget=+s.dataset.i;document.getElementById("logoInput").click();
+});
+document.getElementById("logoInput").addEventListener("change",ev=>{
+  const f=ev.target.files[0];ev.target.value="";if(!f)return;
+  const img=new Image();const url=URL.createObjectURL(f);
+  img.onload=()=>{const max=240;let{width:w,height:h}=img;const r=Math.min(1,max/Math.max(w,h));
+    const cv=document.createElement("canvas");cv.width=Math.round(w*r);cv.height=Math.round(h*r);
+    cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+    logos[logoTarget]=cv.toDataURL("image/png");localStorage.setItem(LKEY,JSON.stringify(logos));
+    URL.revokeObjectURL(url);renderLogos();toast("Logo ajouté")};
+  img.src=url;
+});
+
+function buildFiche(){
+  const list=entries.filter(e=>inPeriod(e.date)).sort((a,b)=>a.ts-b.ts);
+  let frais=0,econ=0,total=0;
+  list.forEach(e=>{const q=e.qty||1;total+=q;if(e.mode==="navette")econ+=e.amount||0;else frais+=e.amount||0});
+  const typeLbl=c=>c==="reco"?"Recommandé":c==="verte"?"Lettre verte":c==="sig"?"Colis (sig.)":c==="nosig"?"Colis (s/sig.)":"Colis (hub/OM)";
+  const rows=list.map((e,i)=>`<tr><td>${i+1}</td><td>${typeLbl(e.cat)}${(e.qty||1)>1?" ×"+e.qty:""}</td>
+    <td>${(e.exp||"").replace(/—/g,"·")||"—"}</td><td>${e.dest||"—"}</td>
+    <td class="num">${e.num||"—"}</td><td>${e.mode==="navette"?"Navette":"Poste"}</td>
+    <td style="text-align:right;white-space:nowrap">${e.amount?fmtEuro(e.amount):"—"}</td></tr>`).join("")
+    ||`<tr><td colspan="7" style="text-align:center;color:#888;padding:14px">Aucun envoi sur la période.</td></tr>`;
+  const lg=logos.map((l,i)=>l?`<img class="lg" src="${l}">`:`<div class="lgph">Logo ${i+1}</div>`).join("");
+  const titre=period==="day"?"Journée du "+periodLabel():"Période : "+periodLabel();
+  document.getElementById("printArea").innerHTML=`<div class="fiche">
+    <div class="fiche-head">
+      <div class="fiche-logos">${lg}</div>
+      <div class="fiche-title">
+        <div class="ft-main">FICHE D'ENVOIS DU COURRIER</div>
+        <div class="ft-sub">GSBdD Poitiers – Saint-Maixent · POITIERS-CDIS (Vienne)</div>
+        <div class="ft-date">${titre}</div>
+      </div>
+    </div>
+    <table class="fiche-tbl">
+      <thead><tr><th>#</th><th>Type</th><th>Expéditeur</th><th>Destinataire</th><th>N° de suivi</th><th>Achem.</th><th style="text-align:right">Tarif</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="fiche-tot">Total : <b>${total} envoi(s)</b> &nbsp;·&nbsp; Frais postaux : <b>${fmtEuro(frais)}</b> &nbsp;·&nbsp; dont économisé via navette : <b>${fmtEuro(econ)}</b></div>
+    <div class="fiche-foot">
+      <div class="fiche-sig">Le vaguemestre<div class="line"></div></div>
+      <div class="fiche-stamp"><div class="stamp-box"></div><div class="stamp-lbl">Cachet d'oblitération — La Poste</div></div>
+    </div>
+  </div>`;
+}
+document.getElementById("printBtn").addEventListener("click",()=>{buildFiche();setTimeout(()=>window.print(),100)});
+
+renderLogos();renderPickers();applyType();refreshAmtLabel();render();
 </script>
 </body>
 </html>
